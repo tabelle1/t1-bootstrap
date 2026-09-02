@@ -24,6 +24,9 @@ dependencies = ["textual>=6.0", "rich>=13.3.3"]
 
 [project.urls]
 Homepage = "https://tabelle1.at"
+Repository = "https://github.com/tabelle1/t1-bootstrap"
+Issues = "https://github.com/tabelle1/t1-bootstrap/issues"
+Changelog = "https://github.com/tabelle1/t1-bootstrap/blob/main/CHANGELOG.md"
 
 [project.scripts]
 t1 = "t1_bootstrap.cli:main"
