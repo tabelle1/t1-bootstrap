@@ -27,6 +27,20 @@ no changelog section, or a PyPI version nobody can explain, is a defect — trea
 hardcoded `__version__`** — that is the drift this design removed. CI already fails the build
 when a tag and `pyproject.toml` disagree.
 
+## Prerequisites
+
+Steps 8 and 9 need the GitHub CLI, which is **not installed on this machine yet**:
+
+```bash
+brew install gh && gh auth login
+```
+
+Check with `command -v gh` during preflight. If it is missing, say so before starting a
+release rather than discovering it after the tag is already pushed — an unpublished GitHub
+release is still an undocumented release. The fallback is to create the release by hand at
+`https://github.com/tabelle1/t1-bootstrap/releases/new?tag=v<NEW>`, pasting the changelog
+section as the body; report that as a manual step the user must finish.
+
 ## Versioning (SemVer)
 
 `MAJOR.MINOR.PATCH`. Decide from the changelog's Unreleased section, not from a feeling:
@@ -89,6 +103,7 @@ Run these in order. Stop at the first failure and report it — do not work arou
 **1. Preflight**
 
 ```bash
+command -v gh                      # needed for steps 8-9
 git status --short                 # must be clean
 git branch --show-current          # must be main
 git fetch --tags origin && git log --oneline origin/main..HEAD   # must be empty
