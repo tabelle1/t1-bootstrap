@@ -10,6 +10,11 @@
 
 **t1 bootstrap** — start a Python project without thinking about the boilerplate.
 
+[![PyPI](https://img.shields.io/pypi/v/t1-bootstrap)](https://pypi.org/project/t1-bootstrap/)
+[![Python](https://img.shields.io/pypi/pyversions/t1-bootstrap)](https://pypi.org/project/t1-bootstrap/)
+[![CI](https://github.com/tabelle1/t1-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/tabelle1/t1-bootstrap/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/tabelle1/t1-bootstrap/blob/main/LICENSE)
+
 </div>
 
 `uv init` gives you a folder. This gives you the folder you actually wanted: a venv on the
@@ -19,12 +24,17 @@ Python you picked, a `src/` layout, the directories you always end up creating b
 A start screen, then one screen with a live preview — keyboard or mouse. A full project lands
 in **less than a second**.
 
+<img src="https://raw.githubusercontent.com/tabelle1/t1-bootstrap/main/docs/wizard.svg" alt="The t1 wizard: the form on the left, a live preview of the project tree on the right" width="100%">
+
 ## Install
 
-Requires Python 3.13+.
+Runs on macOS, Linux and Windows (Windows Terminal with PowerShell 5.1 or 7). Needs
+Python 3.13 or newer — `uv` fetches one if the machine has none.
 
 ```bash
-uv tool install t1-bootstrap      # or: uv sync && uv run t1
+uvx t1-bootstrap                  # try it without installing anything
+uv tool install t1-bootstrap      # keep it: `t1` on your PATH
+pipx install t1-bootstrap         # the same, without uv
 ```
 
 ## Use it
@@ -69,35 +79,44 @@ were. Install the wrapper once and your *own* shell follows along instead, so th
 nested shell and `deactivate` works as usual:
 
 ```bash
-eval "$(t1 shell-init)"         # ~/.zshrc or ~/.bashrc
-t1 shell-init fish | source     # ~/.config/fish/config.fish
+eval "$(t1 shell-init)"                                    # ~/.zshrc or ~/.bashrc
+t1 shell-init fish | source                                # ~/.config/fish/config.fish
+```
+
+```powershell
+Invoke-Expression (t1 shell-init powershell | Out-String)  # $PROFILE
 ```
 
 ### Without the TUI
 
 ```bash
 t1 new "sales pipeline"                          # sensible defaults
-t1 new etl -p 3.13 --dirs data,logs,sql          # pick directories
+t1 new etl -p 3.13 --dirs data,logs,sql          # pick the Python and the directories
 t1 new lib --flat --extras none                  # just the package
+t1 new api -C ~/projects --no-venv --no-git      # elsewhere, and without the slow parts
 t1 new thing --dry-run                           # print the plan, write nothing
 t1 options                                       # list directories and extras
 t1 pythons                                       # list interpreters you can build on
 t1 shell-init                                    # the shell function, for your rc file
 t1 install-uv                                    # install uv, if you don't have it
+t1 --version
 ```
 
-`--dirs` and `--extras` take a comma list, or `all` / `none`.
+`--dirs` and `--extras` take a comma list, or `all` / `none`. `-p` takes a version series such
+as `3.13`; anything else is refused before a file is written.
 
 ### If you don't have uv
 
 uv builds the venv and installs dependencies. Without it you still get a project — just
-`python -m venv` and no install. If it isn't on your `PATH`, t1 offers to fetch it from
+`python -m venv` on the interpreter you asked for, and no install. If uv isn't on your `PATH`,
+t1 offers to fetch it from
 [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/) and
 shows you the exact command first. It only asks when there's someone there to answer, never
 installs on a `--dry-run`, and taking the offer is always optional:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh    # what `t1 install-uv` runs
+curl -LsSf https://astral.sh/uv/install.sh | sh                                # macOS, Linux
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
 ```
 
 ## What you get
@@ -135,17 +154,33 @@ rather than hatchling. Measured on a cold cache, first `uv sync`:
 | hatchling | 3456 ms |
 | `uv_build` | 323 ms |
 
+Apple Silicon Mac, uv 0.9.30. Your numbers will differ; the ratio shouldn't.
+
 `uv sync` also creates `.venv` on the pinned interpreter by itself, so there is no separate
 `uv venv` call. Writing every file costs about 6 ms; the rest is `git` and `uv`.
 
 ## Development
 
 ```bash
+git clone https://github.com/tabelle1/t1-bootstrap && cd t1-bootstrap
 uv sync
 uv run pytest
 uv run ruff check . && uv run ruff format .
+uv run ty check src
+uv run t1                                                 # the wizard, from the checkout
 uv run textual run --dev t1_bootstrap.app:BootstrapApp   # with the Textual devtools
+uv run python scripts/screenshot.py                       # refresh docs/wizard.svg
 ```
+
+CI runs the same checks on macOS, Linux and Windows, plus a leg on the oldest dependency
+versions the package claims to support. User-visible changes are recorded in
+[CHANGELOG.md](https://github.com/tabelle1/t1-bootstrap/blob/main/CHANGELOG.md) as they land.
+Bugs and ideas: [open an issue](https://github.com/tabelle1/t1-bootstrap/issues). Security
+concerns: see [SECURITY.md](https://github.com/tabelle1/t1-bootstrap/blob/main/SECURITY.md).
+
+## License
+
+[MIT](https://github.com/tabelle1/t1-bootstrap/blob/main/LICENSE) © Philipp Formanek.
 
 ---
 

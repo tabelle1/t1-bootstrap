@@ -10,7 +10,7 @@ is `0`, breaking changes are released as minor bumps and are always called out b
 
 ## [0.1.0] - 2026-09-02
 
-First public release. Requires Python 3.13 or newer.
+First public release. Runs on macOS, Linux and Windows; requires Python 3.13 or newer.
 
 ### Added
 
@@ -29,8 +29,17 @@ First public release. Requires Python 3.13 or newer.
   hatchling on a cold cache.
 - `t1 shell-init` wrapper so the new project's venv activates in your own shell instead of a
   nested one.
-- Graceful degradation without uv: projects still build via `python -m venv`, and t1 offers to
-  install uv only when someone is there to answer.
+- Graceful degradation without uv: projects still build via `python -m venv` on an interpreter
+  verified to be the requested series, and t1 offers to install uv only when someone is there
+  to answer - with Astral's `install.sh` on macOS and Linux, `install.ps1` on Windows.
+- Windows support: a PowerShell wrapper from `t1 shell-init powershell`, interpreter discovery
+  through the `py` launcher, and project names that Windows would refuse are rejected up front.
+- `-p/--python` is validated: anything that is not a version series such as `3.13` stops the
+  scaffold before a file is written, in the TUI and the CLI alike.
+- A target that cannot be written to ends with a clear failure and a way out, in both the TUI
+  and the CLI, instead of a traceback.
+- `t1 --version` and `t1 shell-init` no longer probe the installed interpreters, so the shell
+  wrapper adds nothing to a new terminal's start-up time.
 
 <!-- Update on every release: [Unreleased] compares the newest tag to main. -->
 
