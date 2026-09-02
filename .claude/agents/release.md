@@ -29,15 +29,13 @@ when a tag and `pyproject.toml` disagree.
 
 ## Prerequisites
 
-Steps 8 and 9 need the GitHub CLI, which is **not installed on this machine yet**:
+Steps 8 and 9 need the GitHub CLI. It is installed and authenticated as `tabelle1`, with
+`repo` and `workflow` scopes — enough to create releases and read workflow runs.
 
-```bash
-brew install gh && gh auth login
-```
-
-Check with `command -v gh` during preflight. If it is missing, say so before starting a
-release rather than discovering it after the tag is already pushed — an unpublished GitHub
-release is still an undocumented release. The fallback is to create the release by hand at
+Still check with `command -v gh && gh auth status` during preflight; tokens expire. If it is
+unavailable, say so before starting a release rather than discovering it after the tag is
+already pushed — an unpublished GitHub release is still an undocumented release. The fallback
+is to create the release by hand at
 `https://github.com/tabelle1/t1-bootstrap/releases/new?tag=v<NEW>`, pasting the changelog
 section as the body; report that as a manual step the user must finish.
 
