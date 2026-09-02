@@ -5,6 +5,7 @@ import tomllib
 
 import pytest
 
+from t1_bootstrap import handoff, scaffold
 from t1_bootstrap.options import DIRECTORIES
 from t1_bootstrap.scaffold import build, next_steps, step_count
 from t1_bootstrap.spec import ProjectSpec
@@ -76,8 +77,45 @@ def test_a_failed_root_aborts_without_a_traceback(tmp_path):
     blocker.write_text("I am a file, not a directory")
     spec = ProjectSpec(name="demo", parent=blocker)
     events = list(build(spec))
-    assert events[-1].status == "done"
+    assert events[-1].status == "aborted"
     assert "Nothing was created" in events[-1].label
+
+
+def test_an_unwritable_project_aborts_instead_of_raising(spec):
+    """An OSError mid-build ends the stream with `aborted` - never a traceback."""
+    spec.root.mkdir()
+    (spec.root / "pyproject.toml").mkdir()  # writing the file will fail
+    events = list(build(spec))
+    assert events[-1].status == "aborted"
+    assert "incomplete" in events[-1].label
+    failed = [e for e in events if e.status == "fail"]
+    assert [e.label for e in failed] == ["Write project files"]
+
+
+def test_without_uv_the_venv_comes_from_a_verified_interpreter(spec, monkeypatch):
+    """Declining uv is a real choice: python -m venv, on the series that was asked for."""
+    monkeypatch.setattr(scaffold, "uv_path", lambda: None)
+    monkeypatch.setattr(scaffold.shutil, "which", lambda name: sys.executable)
+    spec.python = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    spec.extras.add("venv")
+    statuses = run(spec)
+    assert statuses["Create .venv"] == "ok"
+    assert (spec.root / ".venv").is_dir()
+
+
+def test_a_venv_is_never_built_on_the_wrong_interpreter(spec, monkeypatch):
+    """A venv that contradicts .python-version is worse than no venv."""
+    monkeypatch.setattr(scaffold, "uv_path", lambda: None)
+    monkeypatch.setattr(scaffold.shutil, "which", lambda name: sys.executable)
+    spec.python = "3.99"
+    spec.extras.add("venv")
+    events = list(build(spec))
+    by_label = {e.label: e for e in events if e.status != "start"}
+    assert by_label["Create .venv"].status == "fail"
+    assert "no Python 3.99" in by_label["Create .venv"].detail
+    assert events[-1].status == "done"
+    assert "warning" in events[-1].label
+    assert not (spec.root / ".venv").exists()
 
 
 def test_step_count_matches_what_build_reports(spec):
@@ -101,7 +139,8 @@ def test_next_steps_quote_paths_containing_spaces(tmp_path):
     spaced = tmp_path / "a folder"
     spaced.mkdir()
     spec = ProjectSpec(name="demo", parent=spaced, directories={"tests"})
-    assert next_steps(spec)[0].startswith("cd '")
+    assert " " in str(spec.root)
+    assert next_steps(spec)[0] == f"cd {handoff.quote_path(spec.root)}"
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
@@ -174,7 +213,8 @@ def test_the_lockfile_is_in_the_initial_commit(tmp_path):
     spec = ProjectSpec(
         name="locked",
         parent=tmp_path,
-        python="3.13",
+        # The interpreter running the suite: uv need not download another one.
+        python=f"{sys.version_info.major}.{sys.version_info.minor}",
         directories={"tests"},
         extras={"git", "venv", "ruff"},
     )

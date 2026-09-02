@@ -89,3 +89,21 @@ def test_readme_carries_the_name_and_quickstart(spec):
     assert body.startswith("# sales-pipeline")
     assert "uv run pytest" in body
     assert "uv run sales-pipeline" in body
+
+
+def test_readme_links_to_the_real_repository(spec):
+    body = templates.readme(spec)
+    assert "https://github.com/tabelle1/t1-bootstrap" in body
+    assert "(https://github.com/)" not in body
+
+
+def test_env_and_its_example_are_different_files(spec):
+    env, example = templates.env_file(spec), templates.env_example(spec)
+    assert env != example
+    assert "Never commit" in env
+    assert "SALES_PIPELINE_ENV=local" in env
+    assert "SALES_PIPELINE_ENV=local" in example
+
+
+def test_generated_pyproject_has_no_dangling_per_file_ignores(spec):
+    assert "per-file-ignores" not in templates.pyproject(spec)

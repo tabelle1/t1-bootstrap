@@ -1,4 +1,4 @@
-"""Tabelle1 brand assets, rasterised from static/img/tabelle1_logo.svg."""
+"""Tabelle1 brand assets: the palette, the icon set and the half-block wordmark."""
 
 from rich.text import Text
 

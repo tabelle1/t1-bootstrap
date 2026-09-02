@@ -1,6 +1,9 @@
+import time
+
 import pytest
 from textual.widgets import Button, Input, Static
 
+import t1_bootstrap.app as tui
 from t1_bootstrap import uv_setup
 from t1_bootstrap.app import (
     BootstrapApp,
@@ -12,6 +15,17 @@ from t1_bootstrap.app import (
     WelcomeScreen,
     WizardScreen,
 )
+from t1_bootstrap.scaffold import Event
+
+
+async def settle(pilot, condition, what: str, timeout: float = 15.0) -> None:
+    """Pause the pilot until `condition()` holds - builds run on a real thread."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        await pilot.pause()
+        if condition():
+            return
+    pytest.fail(f"{what} did not happen within {timeout:.0f}s")
 
 
 async def test_the_welcome_screen_offers_one_door_in():
@@ -102,10 +116,7 @@ async def build_demo(pilot, tmp_path) -> BuildScreen:
     await pilot.pause()
 
     await pilot.press("ctrl+n")
-    for _ in range(200):
-        await pilot.pause()
-        if getattr(pilot.app.screen, "finished", False):
-            break
+    await settle(pilot, lambda: getattr(pilot.app.screen, "finished", False), "the build")
     return pilot.app.screen
 
 
@@ -371,7 +382,7 @@ async def test_the_prompt_shows_the_official_command(monkeypatch):
         await pilot.pause()
         screen = pilot.app.screen
         command = str(screen.query_one("#uv-command", Static).content)
-        assert "astral.sh/uv/install.sh" in command
+        assert "astral.sh/uv/install" in command  # .sh or .ps1, whichever this box gets
         assert pilot.app.focused is screen.query_one("#uv-yes", Button)
 
 
@@ -382,11 +393,9 @@ async def test_saying_yes_on_the_prompt_installs(monkeypatch):
         await pilot.pause()
         screen = pilot.app.screen
         await pilot.press("y")
-        for _ in range(100):
-            await pilot.pause()
-            if "installed" in str(screen.query_one("#uv-status", Static).content):
-                break
-        assert "uv installed" in str(screen.query_one("#uv-status", Static).content)
+        status = screen.query_one("#uv-status", Static)
+        await settle(pilot, lambda: "installed" in str(status.content), "the install")
+        assert "uv installed" in str(status.content)
 
 
 async def test_a_failed_install_is_reported_not_hidden(monkeypatch):
@@ -396,8 +405,55 @@ async def test_a_failed_install_is_reported_not_hidden(monkeypatch):
         await pilot.pause()
         screen = pilot.app.screen
         await pilot.click("#uv-yes")
-        for _ in range(100):
-            await pilot.pause()
-            if "unreachable" in str(screen.query_one("#uv-status", Static).content):
-                break
-        assert "network unreachable" in str(screen.query_one("#uv-status", Static).content)
+        status = screen.query_one("#uv-status", Static)
+        await settle(pilot, lambda: "unreachable" in str(status.content), "the failure report")
+        assert "network unreachable" in str(status.content)
+
+
+# -- when the scaffold itself breaks -----------------------------------------
+
+
+async def test_a_crashing_build_still_lets_you_leave(monkeypatch, tmp_path):
+    """A bug in the scaffold must show up as a failed outcome, not a stranded screen."""
+
+    def crashing_build(spec):
+        yield Event("start", "Create demo/")
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(tui, "build", crashing_build)
+    app = BootstrapApp(welcome=False)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press(*"demo")
+        pilot.app.query_one("#location", Input).value = str(tmp_path)
+        await pilot.pause()
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert isinstance(screen, BuildScreen)
+        await settle(pilot, lambda: screen.finished, "the crash report")
+        outcome = str(screen.query_one("#outcome", Static).content)
+        assert "crashed" in outcome
+        assert "disk on fire" in outcome
+        await pilot.press("d")
+        await pilot.pause()
+    assert app.return_value == Outcome(tmp_path / "demo", enter=False)
+
+
+async def test_a_partial_build_is_shown_as_such(tmp_path):
+    """Files that cannot be written: the outcome says so and the tree is still there."""
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "pyproject.toml").mkdir()
+    app = BootstrapApp(welcome=False)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.press(*"demo")
+        pilot.app.query_one("#location", Input).value = str(tmp_path)
+        pilot.app.query_one("#extra-venv", Toggle).value = False
+        pilot.app.query_one("#extra-git", Toggle).value = False
+        await pilot.pause()
+        # The wizard refuses a non-empty target; drive the build screen directly.
+        pilot.app.push_screen(BuildScreen(pilot.app.screen.spec))
+        await pilot.pause()
+        screen = pilot.app.screen
+        await settle(pilot, lambda: screen.finished, "the aborted build")
+        assert "incomplete" in str(screen.query_one("#outcome", Static).content)
+        assert screen.query_one("#actions").has_class("visible")

@@ -11,6 +11,8 @@ def test_hand_back_writes_the_path_for_the_shell_wrapper(tmp_path, monkeypatch):
     monkeypatch.setenv(handoff.CD_FILE, str(cd_file))
     assert handoff.hand_back(tmp_path / "demo")
     assert cd_file.read_text().strip() == str(tmp_path / "demo")
+    assert cd_file.read_bytes().endswith(b"\n")
+    assert b"\r" not in cd_file.read_bytes()
 
 
 def test_hand_back_is_false_without_a_wrapper(monkeypatch):
@@ -36,19 +38,64 @@ def test_a_project_without_a_venv_leaves_the_environment_alone(tmp_path):
     assert handoff.venv_bin(tmp_path / "demo") is None
 
 
-def test_the_wrapper_defines_a_t1_function_for_both_shell_families():
+def test_the_wrapper_defines_a_t1_function_for_every_shell_family():
     posix = handoff.wrapper("zsh")
-    assert "t1() {" in posix and handoff.CD_FILE in posix
+    assert "t1() {" in posix
+    assert handoff.CD_FILE in posix
     assert ". .venv/bin/activate" in posix
+    assert ".venv/Scripts/activate" in posix  # Git Bash on Windows
 
     fish = handoff.wrapper("fish")
-    assert "function t1" in fish and "activate.fish" in fish
+    assert "function t1" in fish
+    assert "activate.fish" in fish
+
+    for family in ("powershell", "pwsh"):
+        powershell = handoff.wrapper(family)
+        assert "function t1 {" in powershell
+        assert handoff.CD_FILE in powershell
+        assert "Activate.ps1" in powershell
+        # The wrapper must call the executable, not recurse into itself.
+        assert "Get-Command t1 -CommandType Application" in powershell
 
 
 def test_shell_family_is_the_bare_name(monkeypatch):
     monkeypatch.setenv("SHELL", "/opt/homebrew/bin/fish")
     assert handoff.shell_family() == "fish"
     assert handoff.shell_family("/bin/zsh") == "zsh"
+    assert handoff.shell_family("C:/Program Files/PowerShell/7/pwsh.exe") == "pwsh"
+
+
+def test_user_shell_falls_back_when_shell_is_unset(monkeypatch):
+    monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.setattr(handoff, "WINDOWS", False)
+    monkeypatch.setattr(handoff.shutil, "which", lambda name: "/bin/zsh" if name == "zsh" else None)
+    assert handoff.user_shell() == "/bin/zsh"
+    monkeypatch.setattr(handoff.shutil, "which", lambda name: None)
+    assert handoff.user_shell() == "/bin/sh"
+
+
+def test_user_shell_on_windows_prefers_powershell(monkeypatch):
+    monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.setattr(handoff, "WINDOWS", True)
+    monkeypatch.setattr(
+        handoff.shutil, "which", lambda name: "C:/pwsh/pwsh.exe" if name == "pwsh" else None
+    )
+    assert handoff.user_shell() == "C:/pwsh/pwsh.exe"
+    assert handoff.wrapper() is handoff.POWERSHELL_WRAPPER
+
+    monkeypatch.setattr(handoff.shutil, "which", lambda name: None)
+    monkeypatch.setenv("COMSPEC", "C:/Windows/System32/cmd.exe")
+    assert handoff.user_shell().endswith("cmd.exe")
+
+
+def test_quote_path_matches_the_shell_it_is_for(monkeypatch):
+    monkeypatch.setattr(handoff, "WINDOWS", False)
+    assert handoff.quote_path("/home/me/a folder") == "'/home/me/a folder'"
+    assert handoff.quote_path("/home/me/plain") == "/home/me/plain"
+
+    monkeypatch.setattr(handoff, "WINDOWS", True)
+    assert handoff.quote_path("C:/Users/me/a folder") == '"C:/Users/me/a folder"'
+    assert handoff.quote_path("C:/Users/me/plain") == "C:/Users/me/plain"
 
 
 def test_the_venv_we_came_from_is_taken_off_the_path(tmp_path):

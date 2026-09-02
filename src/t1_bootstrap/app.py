@@ -3,14 +3,13 @@
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
-from textual.content import Content
 from textual.screen import ModalScreen, Screen
 from textual.theme import Theme
 from textual.widget import Widget
@@ -26,8 +25,9 @@ from textual.widgets import (
     Select,
     Static,
 )
+from textual.worker import Worker, WorkerState
 
-from t1_bootstrap import __version__, handoff, uv_setup
+from t1_bootstrap import __version__, handoff, pythons, uv_setup
 from t1_bootstrap.branding import (
     AUTHOR,
     FLAME,
@@ -42,7 +42,6 @@ from t1_bootstrap.branding import (
     wordmark,
 )
 from t1_bootstrap.options import DEFAULT_DIRECTORIES, DEFAULT_EXTRAS, DIRECTORIES, EXTRAS
-from t1_bootstrap.pythons import available_pythons, default_python
 from t1_bootstrap.scaffold import Event, build, next_steps, step_count
 from t1_bootstrap.spec import ProjectSpec
 
@@ -129,17 +128,24 @@ def choice_label(label: str, hint: str, width: int = 14) -> Text:
 
 
 class Toggle(Checkbox):
-    """A checkbox that shows its state through its glyph, not only its colour."""
+    """A checkbox that shows its state through its glyph, not only its colour.
+
+    Textual draws ``BUTTON_INNER`` between ``BUTTON_LEFT`` and ``BUTTON_RIGHT``;
+    setting it per instance is the public way to let the glyph follow the value.
+    """
 
     BUTTON_LEFT = ""
     BUTTON_RIGHT = ""
     ON = "■"
     OFF = "□"
 
-    @property
-    def _button(self) -> Content:
-        style = self.get_visual_style("toggle--button")
-        return Content.assemble((self.ON if self.value else self.OFF, style))
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.BUTTON_INNER = self.ON if self.value else self.OFF
+
+    def watch_value(self) -> None:
+        self.BUTTON_INNER = self.ON if self.value else self.OFF
+        super().watch_value()
 
 
 class Radio(RadioButton):
@@ -150,10 +156,13 @@ class Radio(RadioButton):
     ON = "●"
     OFF = "○"
 
-    @property
-    def _button(self) -> Content:
-        style = self.get_visual_style("toggle--button")
-        return Content.assemble((self.ON if self.value else self.OFF, style))
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.BUTTON_INNER = self.ON if self.value else self.OFF
+
+    def watch_value(self) -> None:
+        self.BUTTON_INNER = self.ON if self.value else self.OFF
+        super().watch_value()
 
 
 # Widgets that would otherwise eat an arrow key hand it back to the screen, so
@@ -333,7 +342,7 @@ class WizardScreen(ArrowScreen):
         self.spec = ProjectSpec(
             name="",
             parent=Path.cwd(),
-            python=default_python(),
+            python=pythons.default_python(),
             layout="src",
             directories=set(DEFAULT_DIRECTORIES),
             extras=set(DEFAULT_EXTRAS),
@@ -359,7 +368,7 @@ class WizardScreen(ArrowScreen):
                             head("location", "Location", "where the folder is created"),
                             classes="field-head",
                         )
-                        yield Input(value=str(Path.cwd()), id="location")
+                        yield Input(value=short_path(str(Path.cwd())), id="location")
                         yield Static("", id="resolved")
 
                     with Vertical(classes="field"):
@@ -368,7 +377,7 @@ class WizardScreen(ArrowScreen):
                             classes="field-head",
                         )
                         yield Picker(
-                            [(option.label, option.series) for option in available_pythons()],
+                            [(o.label, o.series) for o in pythons.available_pythons()],
                             value=self.spec.python,
                             allow_blank=False,
                             id="python",
@@ -432,7 +441,7 @@ class WizardScreen(ArrowScreen):
         """Read every widget back into the spec."""
         self.spec.name = self.query_one("#name", Input).value
         location = self.query_one("#location", Input).value.strip() or "."
-        self.spec.parent = Path(location).expanduser()
+        self.spec.parent = Path(location).expanduser().resolve()
         select = self.query_one("#python", Picker)
         if select.value is not Select.BLANK:
             self.spec.python = str(select.value)
@@ -462,7 +471,7 @@ class WizardScreen(ArrowScreen):
         resolved = Text(no_wrap=True, overflow="ellipsis")
         if spec.slug:
             resolved.append("→ ", style=MUTED)
-            resolved.append(str(spec.root), style=FLAME)
+            resolved.append(short_path(str(spec.root)), style=FLAME)
         self.query_one("#resolved", Static).update(resolved)
 
         self.query_one("#head-dirs", Static).update(
@@ -544,8 +553,8 @@ class WizardScreen(ArrowScreen):
 
     def action_reset(self) -> None:
         self.query_one("#name", Input).value = ""
-        self.query_one("#location", Input).value = str(Path.cwd())
-        self.query_one("#python", Picker).value = default_python()
+        self.query_one("#location", Input).value = short_path(str(Path.cwd()))
+        self.query_one("#python", Picker).value = pythons.default_python()
         for choice in DIRECTORIES:
             self.query_one(f"#dir-{choice.key}", Toggle).value = choice.default
         for extra in EXTRAS:
@@ -566,7 +575,7 @@ class UvPrompt(ModalScreen[bool]):
         with Vertical(id="uv-dialog"):
             yield Static(head("extras", "uv was not found"), id="uv-title")
             yield Static(Text(uv_setup.WHY, style=MUTED), id="uv-why")
-            yield Static(one_line(uv_setup.INSTALL_COMMAND, FLAME), id="uv-command")
+            yield Static(one_line(uv_setup.install_command(), FLAME), id="uv-command")
             yield Static("", id="uv-status")
             with Horizontal(id="uv-actions"):
                 yield Button("Install uv", id="uv-yes")
@@ -623,6 +632,7 @@ class BuildScreen(ArrowScreen):
         super().__init__()
         self.spec = spec
         self.finished = False
+        self.failures = 0
         self.started_at: float | None = None
 
     def compose(self) -> ComposeResult:
@@ -648,10 +658,17 @@ class BuildScreen(ArrowScreen):
         log.write(Text(f"Building {self.spec.slug}\n", style=f"bold {FLAME}"))
         self.run_build()
 
-    @work(thread=True, exclusive=True)
+    @work(thread=True, exclusive=True, exit_on_error=False)
     def run_build(self) -> None:
         for event in build(self.spec):
             self.app.call_from_thread(self.handle_event, event)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """A bug in the scaffold must not strand the screen: say so, and allow leaving."""
+        if event.state is WorkerState.ERROR and not self.finished:
+            error = event.worker.error
+            detail = f"{type(error).__name__}: {error}" if error else "unknown error"
+            self.handle_event(Event("aborted", "The build crashed", detail))
 
     def handle_event(self, event: Event) -> None:
         log = self.query_one("#build-log", RichLog)
@@ -667,13 +684,15 @@ class BuildScreen(ArrowScreen):
 
         current.update("")
 
-        if event.status == "done":
+        if event.status in {"done", "aborted"}:
             progress = self.query_one("#build-progress", ProgressBar)
             progress.update(total=1, progress=1)
             self.show_outcome(event)
             log.scroll_end(animate=False)
             return
 
+        if event.status == "fail":
+            self.failures += 1
         mark, colour = STATUS_MARKS.get(event.status, ("·", MUTED))
         line = Text(no_wrap=True, overflow="ellipsis")
         line.append(f"  {mark} ", style=colour)
@@ -690,17 +709,24 @@ class BuildScreen(ArrowScreen):
 
     def show_outcome(self, event: Event) -> None:
         self.finished = True
+        aborted = event.status == "aborted"
         text = Text()
-        text.append("✓  ", style="bold #7fd18b")
+        if aborted:
+            text.append("✗  ", style="bold #e06c75")
+        elif self.failures:
+            text.append("!  ", style="bold #f0c674")
+        else:
+            text.append("✓  ", style="bold #7fd18b")
         text.append(f"{event.label}\n", style="bold #e6e9ef")
-        text.append(f"   {event.detail}\n\n", style=MUTED)
-        text.append("   NEXT\n", style=f"bold {MUTED}")
-        commands = next_steps(self.spec)
-        for index, command in enumerate(commands):
-            text.append("   $ ", style=FLAME)
-            text.append(command, style="#c8cdd6")
-            if index < len(commands) - 1:
-                text.append("\n")
+        text.append(f"   {event.detail}", style=MUTED)
+        if not aborted:
+            text.append("\n\n   NEXT\n", style=f"bold {MUTED}")
+            commands = next_steps(self.spec)
+            for index, command in enumerate(commands):
+                text.append("   $ ", style=FLAME)
+                text.append(command, style="#c8cdd6")
+                if index < len(commands) - 1:
+                    text.append("\n")
         outcome = self.query_one("#outcome", Static)
         outcome.update(text)
         outcome.add_class("visible")
@@ -733,7 +759,7 @@ class BuildScreen(ArrowScreen):
             self.app.exit(Outcome(self.spec.root))
 
 
-class BootstrapApp(App):
+class BootstrapApp(App[Outcome]):
     """`t1` - start a Python project without thinking about the boilerplate."""
 
     CSS_PATH = "app.tcss"

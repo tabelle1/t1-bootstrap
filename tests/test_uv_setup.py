@@ -1,4 +1,7 @@
+import os
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -24,7 +27,7 @@ def test_uv_path_prefers_the_one_on_path(monkeypatch):
 
 def test_uv_path_finds_a_fresh_install_not_yet_on_path(monkeypatch, tmp_path):
     """The installer drops uv in ~/.local/bin; this shell's PATH predates that."""
-    binary = tmp_path / "uv"
+    binary = tmp_path / uv_setup.binary_name()
     binary.write_text("#!/bin/sh\n")
     binary.chmod(0o755)
     monkeypatch.setattr(uv_setup.shutil, "which", lambda name: None)
@@ -32,6 +35,7 @@ def test_uv_path_finds_a_fresh_install_not_yet_on_path(monkeypatch, tmp_path):
     assert uv_setup.uv_path() == str(binary)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no execute bit; the .exe suffix decides")
 def test_a_non_executable_file_is_not_uv(monkeypatch, tmp_path):
     (tmp_path / "uv").write_text("not a binary")
     monkeypatch.setattr(uv_setup.shutil, "which", lambda name: None)
@@ -52,29 +56,40 @@ def test_nothing_is_offered_without_a_tty(no_uv):
     assert not uv_setup.should_offer()
 
 
-def test_the_offer_needs_curl_and_sh(monkeypatch):
+def test_the_offer_needs_the_installer_tools(monkeypatch):
     monkeypatch.setattr(uv_setup.shutil, "which", lambda name: None)
     monkeypatch.setattr(uv_setup, "_candidate_dirs", list)
     assert not uv_setup.can_install()
     assert not uv_setup.should_offer_ui()
 
 
+def test_the_shown_command_is_astrals_one_liner_for_the_platform(monkeypatch):
+    monkeypatch.setattr(uv_setup, "WINDOWS", False)
+    assert uv_setup.install_command().startswith("curl -LsSf")
+    assert uv_setup.INSTALL_URL in uv_setup.install_command()
+    assert uv_setup.needs() == "curl and sh"
+
+    monkeypatch.setattr(uv_setup, "WINDOWS", True)
+    assert "irm" in uv_setup.install_command()
+    assert uv_setup.INSTALL_URL_WINDOWS in uv_setup.install_command()
+    assert uv_setup.needs() == "PowerShell"
+    assert uv_setup.binary_name() == "uv.exe"
+
+
 def test_install_runs_the_official_installer(monkeypatch, tmp_path):
     """Fetched with curl from astral.sh, then handed to sh - never a shell string."""
+    monkeypatch.setattr(uv_setup, "WINDOWS", False)
     calls: list[list[str]] = []
 
     def fake_run(command, **kwargs):
         calls.append(command)
         if command[0] == "curl":
             # -o <path> is the last pair; write something so the size check passes.
-            from pathlib import Path
-
             Path(command[-1]).write_text("#!/bin/sh\necho installed\n")
         return subprocess.CompletedProcess(command, 0, stdout="installing uv\n", stderr="")
 
     monkeypatch.setattr(uv_setup.subprocess, "run", fake_run)
     monkeypatch.setattr(uv_setup, "can_install", lambda: True)
-    monkeypatch.setattr(uv_setup, "forget_uv", lambda: None)
     monkeypatch.setattr(uv_setup, "uv_path", lambda: "/home/me/.local/bin/uv")
 
     ok, detail = uv_setup.install()
@@ -86,6 +101,35 @@ def test_install_runs_the_official_installer(monkeypatch, tmp_path):
     assert calls[0][1] == "-LsSf"
     assert calls[1][0] == "sh"
     # nothing is ever run through a shell we assemble ourselves
+    assert all(isinstance(command, list) for command in calls)
+
+
+def test_install_on_windows_uses_powershell(monkeypatch):
+    """Same two steps - fetch, then run - with PowerShell doing both."""
+    monkeypatch.setattr(uv_setup, "WINDOWS", True)
+    monkeypatch.setattr(uv_setup, "_powershell", lambda: "powershell")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "-Command" in command:
+            target = re.search(r"-OutFile '(.+)'", command[-1])
+            assert target, command[-1]
+            Path(target[1]).write_text("Write-Host installed\n")
+        return subprocess.CompletedProcess(command, 0, stdout="installing uv\n", stderr="")
+
+    monkeypatch.setattr(uv_setup.subprocess, "run", fake_run)
+    monkeypatch.setattr(uv_setup, "uv_path", lambda: "C:/Users/me/.local/bin/uv.exe")
+
+    ok, detail = uv_setup.install()
+
+    assert ok
+    assert detail == "C:/Users/me/.local/bin/uv.exe"
+    fetch, run = calls
+    assert fetch[:5] == ["powershell", "-NoProfile", "-ExecutionPolicy", "ByPass", "-Command"]
+    assert uv_setup.INSTALL_URL_WINDOWS in fetch[-1]
+    assert run[:5] == ["powershell", "-NoProfile", "-ExecutionPolicy", "ByPass", "-File"]
+    assert run[-1].endswith("install.ps1")
     assert all(isinstance(command, list) for command in calls)
 
 
@@ -113,11 +157,11 @@ def test_install_reports_an_empty_installer(monkeypatch):
     assert "empty" in detail
 
 
-def test_install_refuses_without_curl(monkeypatch):
+def test_install_refuses_without_its_tools(monkeypatch):
     monkeypatch.setattr(uv_setup, "can_install", lambda: False)
     ok, detail = uv_setup.install()
     assert not ok
-    assert "curl" in detail
+    assert uv_setup.needs() in detail
 
 
 # -- the CLI offer ---------------------------------------------------------
@@ -151,6 +195,17 @@ def test_saying_yes_installs(monkeypatch, capsys):
 
     cli.offer_uv()
     assert "uv installed" in capsys.readouterr().out
+
+
+def test_a_failed_install_from_the_offer_is_reported(monkeypatch, capsys):
+    monkeypatch.setattr(uv_setup, "should_offer", lambda: True)
+    monkeypatch.setattr(cli.Confirm, "ask", classmethod(lambda cls, *a, **k: True))
+    monkeypatch.setattr(uv_setup, "install", lambda *a, **k: (False, "network unreachable"))
+
+    cli.offer_uv()
+    out = capsys.readouterr().out
+    assert "uv install failed" in out
+    assert "network unreachable" in out
 
 
 def test_a_refused_prompt_is_a_no(monkeypatch, capsys):
@@ -190,3 +245,10 @@ def test_install_uv_command_reports_failure(monkeypatch, capsys):
     monkeypatch.setattr(uv_setup, "install", lambda *a, **k: (False, "network unreachable"))
     assert cli.main(["install-uv"]) == 1
     assert "network unreachable" in capsys.readouterr().out
+
+
+def test_install_uv_command_explains_what_it_needs(monkeypatch, capsys):
+    monkeypatch.setattr(uv_setup, "uv_path", lambda: None)
+    monkeypatch.setattr(uv_setup, "can_install", lambda: False)
+    assert cli.main(["install-uv"]) == 1
+    assert uv_setup.needs() in capsys.readouterr().out

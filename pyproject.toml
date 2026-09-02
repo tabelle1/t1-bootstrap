@@ -13,8 +13,10 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Code Generators",
@@ -36,12 +38,18 @@ t1-bootstrap = "t1_bootstrap.cli:main"
 requires = ["uv_build>=0.9.30,<0.10.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+# Downstream packagers build from the sdist and want to run the suite.
+source-include = ["tests/**", "CHANGELOG.md"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=6.0",
     "ruff>=0.14",
     "textual-dev>=1.7",
+    "ty>=0.0.1a1",
 ]
 
 [tool.ruff]
@@ -50,19 +58,50 @@ target-version = "py313"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "PTH", "RET", "ARG"]
+select = [
+    "E", "F", "W",   # pycodestyle, pyflakes
+    "I",             # isort
+    "N",             # naming
+    "UP",            # modern syntax
+    "B",             # bugbear
+    "C4",            # comprehensions
+    "SIM",           # simplify
+    "RUF",           # ruff's own
+    "PTH",           # pathlib over os.path
+    "RET",           # return hygiene
+    "ARG",           # unused arguments
+    "S",             # bandit: this tool spawns processes, so review every one
+    "PT",            # pytest style
+    "PERF",          # performance anti-patterns
+    "FURB",          # refurb modernisations
+    "PIE",           # misc lints
+    "PGH",           # blanket noqa / type: ignore
+    "ERA",           # commented-out code
+    "T20",           # stray print()
+]
 ignore = [
     "E501",   # the formatter owns line length
     "RUF001", # ·, –, › are deliberate UI typography
+    "S603",   # subprocess without shell=True: every call here is a list, by design
+    "S607",   # partial executable paths: uv, git, curl and sh are looked up on PATH
+    "S606",   # os.execve: handing the terminal to the user's shell is the feature
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ARG"]
+"tests/**" = ["ARG", "S101"]
+"src/t1_bootstrap/cli.py" = ["T201"]     # `shell-init` output is meant to be eval'd
+"scripts/**" = ["T201"]                  # release tooling prints on purpose
 
 [tool.ruff.lint.isort]
 known-first-party = ["t1_bootstrap"]
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --strict-config"
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# The suite is warning-free; keep it that way rather than let deprecations pile up.
+filterwarnings = ["error"]

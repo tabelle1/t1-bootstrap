@@ -18,7 +18,12 @@ def uv_build_requirement() -> str:
         return FALLBACK_UV_BUILD
     try:
         out = subprocess.run(
-            [uv, "--version"], capture_output=True, text=True, timeout=10, check=True
+            [uv, "--version"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=True,
         ).stdout
     except (subprocess.SubprocessError, OSError):
         return FALLBACK_UV_BUILD
@@ -128,9 +133,6 @@ def pyproject(spec: ProjectSpec) -> str:
             "# A pragmatic default: correctness, imports, modern syntax, common footguns.",
             'select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "PTH", "RET", "DTZ", "LOG"]',
             'ignore = ["E501"]  # the formatter owns line length',
-            "",
-            "[tool.ruff.lint.per-file-ignores]",
-            '"tests/**" = ["S101"]',
             "",
             "[tool.ruff.lint.isort]",
             f'known-first-party = ["{spec.module}"]',
@@ -279,7 +281,16 @@ def readme(spec: ProjectSpec) -> str:
 
 ---
 
-Bootstrapped with [t1 bootstrap](https://github.com/) 🔸
+Bootstrapped with [t1 bootstrap](https://github.com/tabelle1/t1-bootstrap) 🔸
+"""
+
+
+def env_file(spec: ProjectSpec) -> str:
+    """The real .env: local values, never committed."""
+    return f"""# Local settings for {spec.slug}. Never commit this file - .env.example is the template.
+{spec.module.upper()}_ENV=local
+# DATABASE_URL=
+# API_TOKEN=
 """
 
 

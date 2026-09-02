@@ -1,15 +1,14 @@
 """`t1` - open the wizard, or scaffold straight from the command line."""
 
 import argparse
-import shlex
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.text import Text
 
-from t1_bootstrap import __version__, handoff, uv_setup
+from t1_bootstrap import __version__, handoff, pythons, uv_setup
 from t1_bootstrap.branding import FLAME, logo_text
 from t1_bootstrap.options import (
     DEFAULT_DIRECTORIES,
@@ -19,16 +18,18 @@ from t1_bootstrap.options import (
     EXTRAS,
     EXTRAS_BY_KEY,
 )
-from t1_bootstrap.pythons import available_pythons, default_python
 from t1_bootstrap.scaffold import build, next_steps
 from t1_bootstrap.spec import ProjectSpec
 
 console = Console()
 
 MARKS = {"ok": ("✓", "green"), "warn": ("!", "yellow"), "fail": ("✗", "red"), "skip": ("–", "dim")}
+SHELLS = ["zsh", "bash", "sh", "fish", "powershell", "pwsh"]
 
 
-def _keys(raw: str | None, catalogue: dict, default: frozenset[str]) -> set[str] | None:
+def _keys(
+    raw: str | None, catalogue: Mapping[str, object], default: frozenset[str]
+) -> set[str] | None:
     """Parse a comma-separated selection; returns None if a key is unknown."""
     if raw is None:
         return set(default)
@@ -46,6 +47,11 @@ def _keys(raw: str | None, catalogue: dict, default: frozenset[str]) -> set[str]
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """The argument parser.
+
+    Deliberately cheap: nothing here may probe the machine. `t1 shell-init` runs
+    from every new terminal via the wrapper, and `--version` should be instant.
+    """
     parser = argparse.ArgumentParser(
         prog="t1",
         description="Start a Python project: venv, src layout, and the directories you always create anyway.",
@@ -56,7 +62,10 @@ def build_parser() -> argparse.ArgumentParser:
     new = sub.add_parser("new", help="scaffold without opening the TUI")
     new.add_argument("name", help="project name; spaces become dashes")
     new.add_argument(
-        "-p", "--python", default=None, help=f"version series (default {default_python()})"
+        "-p",
+        "--python",
+        default=None,
+        help="version series, e.g. 3.13 (default: the newest installed)",
     )
     new.add_argument("-C", "--into", default=".", help="parent directory (default: here)")
     new.add_argument("--flat", action="store_true", help="package at the root instead of src/")
@@ -73,13 +82,13 @@ def build_parser() -> argparse.ArgumentParser:
     shell = sub.add_parser(
         "shell-init", help="print the shell function that cd's you into a new project"
     )
-    shell.add_argument(
-        "shell",
-        nargs="?",
-        choices=["zsh", "bash", "sh", "fish"],
-        help=f"default: your $SHELL ({handoff.shell_family()})",
-    )
+    shell.add_argument("shell", nargs="?", choices=SHELLS, help="default: the shell you are in")
     return parser
+
+
+def interactive_terminal() -> bool:
+    """Whether there is a screen to draw the wizard on."""
+    return console.is_terminal
 
 
 def cmd_new(args: argparse.Namespace) -> int:
@@ -95,7 +104,7 @@ def cmd_new(args: argparse.Namespace) -> int:
     spec = ProjectSpec(
         name=args.name,
         parent=Path(args.into).expanduser().resolve(),
-        python=args.python or default_python(),
+        python=args.python or pythons.default_python(),
         layout="flat" if args.flat else "src",
         directories=directories,
         extras=extras,
@@ -127,9 +136,15 @@ def cmd_new(args: argparse.Namespace) -> int:
     for event in build(spec):
         if event.status == "start":
             continue
+        if event.status == "aborted":
+            console.print()
+            console.print(Text(f"✗ {event.label}", style="bold red"))
+            console.print(Text(f"  {event.detail}", style="dim"))
+            return 1
         if event.status == "done":
             console.print()
-            console.print(Text(f"✓ {event.label}", style="bold green"))
+            mark, colour = ("!", "yellow") if failed else ("✓", "green")
+            console.print(Text(f"{mark} {event.label}", style=f"bold {colour}"))
             for command in next_steps(spec):
                 console.print(Text("  $ ", style=FLAME) + Text(command))
             continue
@@ -149,7 +164,7 @@ def offer_uv() -> None:
     console.print()
     console.print(Text("uv was not found on your PATH.", style="bold"))
     console.print(f"[dim]{uv_setup.WHY}[/]")
-    console.print(f"[dim]Official installer:[/] {uv_setup.INSTALL_COMMAND}")
+    console.print(f"[dim]Official installer:[/] {uv_setup.install_command()}")
     try:
         yes = Confirm.ask(f"[{FLAME}]Install uv now?[/]", default=False)
     except (EOFError, KeyboardInterrupt):
@@ -164,7 +179,7 @@ def offer_uv() -> None:
         console.print(f"[green]✓[/] uv installed   [dim]{detail}[/]")
     else:
         console.print(f"[red]✗[/] uv install failed   [dim]{detail}[/]")
-        console.print(f"[dim]  Install it yourself: {uv_setup.INSTALL_COMMAND}[/]")
+        console.print(f"[dim]  Install it yourself: {uv_setup.install_command()}[/]")
 
 
 def cmd_install_uv() -> int:
@@ -174,9 +189,9 @@ def cmd_install_uv() -> int:
         console.print(f"[green]✓[/] uv is already installed   [dim]{existing}[/]")
         return 0
     if not uv_setup.can_install():
-        console.print(f"[red]✗[/] Needs curl and sh. See {uv_setup.DOCS_URL}")
+        console.print(f"[red]✗[/] Needs {uv_setup.needs()}. See {uv_setup.DOCS_URL}")
         return 1
-    console.print(f"[dim]Astral's official installer:[/] {uv_setup.INSTALL_COMMAND}\n")
+    console.print(f"[dim]Astral's official installer:[/] {uv_setup.install_command()}\n")
     ok, detail = uv_setup.install(on_line=lambda line: console.print(f"[dim]  {line}[/]"))
     if ok:
         console.print(f"\n[green]✓[/] uv installed   [dim]{detail}[/]")
@@ -202,9 +217,10 @@ def cmd_options() -> int:
 
 def cmd_pythons() -> int:
     console.print()
-    for option in available_pythons():
+    default = pythons.default_python()
+    for option in pythons.available_pythons():
         tag = f"[{FLAME}]installed[/]" if option.installed else "[dim]download[/]"
-        marker = f"[{FLAME}]›[/]" if option.series == default_python() else " "
+        marker = f"[{FLAME}]›[/]" if option.series == default else " "
         console.print(f" {marker} [bold]{option.series:<6}[/] [dim]{option.patch:<10}[/] {tag}")
     return 0
 
@@ -228,7 +244,7 @@ def farewell(root: Path, enter: bool) -> int:
         return 0  # the shell-init wrapper does the cd - and the activation
 
     shell = handoff.user_shell()
-    note = [f"{Path(shell).name} here"]
+    note = [f"{handoff.shell_family(shell)} here"]
     if handoff.venv_bin(root):
         note.append(".venv active")
     note.append("exit returns you to this shell")
@@ -237,7 +253,7 @@ def farewell(root: Path, enter: bool) -> int:
         return handoff.open_shell(root, shell)
     except OSError as error:
         console.print(f"[red]✗[/] Could not open a shell: {error}")
-        console.print(f"[dim]  cd {shlex.quote(str(root))}[/]")
+        console.print(f"[dim]  cd {handoff.quote_path(root)}[/]")
         return 1
 
 
@@ -255,7 +271,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "shell-init":
         return cmd_shell_init(args)
 
-    if not console.is_terminal:
+    if not interactive_terminal():
         console.print(logo_text())
         console.print("\n[dim]Not a terminal - use[/] t1 new NAME [dim]or run t1 from a TTY.[/]")
         return 1

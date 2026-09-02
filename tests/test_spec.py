@@ -85,3 +85,25 @@ def test_gitignore_extras_come_from_selected_directories(tmp_path):
     spec = ProjectSpec(name="demo", parent=tmp_path, directories={"logs"})
     assert "logs/*" in spec.gitignore_extras()
     assert ProjectSpec(name="demo", parent=tmp_path).gitignore_extras() == []
+
+
+@pytest.mark.parametrize("name", ["nul", "CON", "com1", "lpt9"])
+def test_windows_reserved_names_are_rejected(tmp_path, name):
+    spec = ProjectSpec(name=name, parent=tmp_path)
+    assert any("reserved device name" in p for p in spec.problems())
+
+
+def test_a_file_in_the_way_is_reported(tmp_path):
+    (tmp_path / "demo").write_text("not a directory")
+    spec = ProjectSpec(name="demo", parent=tmp_path)
+    assert any("already exists as a file" in p for p in spec.problems())
+
+
+@pytest.mark.parametrize("python", ["bogus", "3", "3.13.2", "py313", ""])
+def test_python_must_be_a_version_series(tmp_path, python):
+    spec = ProjectSpec(name="demo", parent=tmp_path, python=python)
+    assert any("version series" in p for p in spec.problems())
+
+
+def test_a_proper_series_is_accepted(tmp_path):
+    assert ProjectSpec(name="demo", parent=tmp_path, python="3.13").is_valid

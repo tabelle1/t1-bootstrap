@@ -4,6 +4,17 @@ Screen {
     background: $background;
 }
 
+/* Single-line rows everywhere the content is a list, not prose. */
+#tree,
+#plan,
+#counts,
+.field-head,
+.field-head-tight,
+#resolved {
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
 /* ---------- brand bar ---------- */
 
 #brandbar {
@@ -30,11 +41,16 @@ Screen {
     color: $primary 40%;
 }
 
-/* ---------- body ---------- */
+/* ---------- body: form on the left, preview on the right ---------- */
 
 #body {
     height: 1fr;
     padding: 0 3;
+}
+
+#left {
+    width: 5fr;
+    height: 100%;
 }
 
 #form {
@@ -129,6 +145,8 @@ SelectOverlay {
     background: $surface;
 }
 
+/* ---------- toggles: the glyph carries the state, colour reinforces it ---------- */
+
 RadioSet {
     border: none;
     background: transparent;
@@ -144,6 +162,14 @@ RadioButton {
     width: auto;
 }
 
+Checkbox {
+    border: none;
+    background: transparent;
+    padding: 0;
+    height: 1;
+    width: 100%;
+}
+
 RadioButton:focus,
 Checkbox:focus {
     background: $boost;
@@ -155,16 +181,16 @@ Checkbox > .toggle--label {
     color: $foreground;
 }
 
+RadioButton > .toggle--button,
+Checkbox > .toggle--button {
+    color: $text-muted;
+    background: transparent;
+}
+
 RadioButton.-on > .toggle--button,
 Checkbox.-on > .toggle--button {
     color: $primary;
-    background: $panel;
-}
-
-RadioButton > .toggle--button,
-Checkbox > .toggle--button {
-    color: $surface;
-    background: $panel;
+    background: transparent;
 }
 
 .choices {
@@ -175,19 +201,16 @@ Checkbox > .toggle--button {
     height: auto;
 }
 
-Checkbox {
-    border: none;
-    background: transparent;
-    padding: 0;
-    height: 1;
-    width: 100%;
+.choices.narrow {
+    grid-size: 1;
 }
 
 /* ---------- create ---------- */
 
 #create {
+    dock: bottom;
     width: 100%;
-    margin-top: 1;
+    margin: 1 3 0 0;
     border: none;
     height: 3;
     background: $primary;
@@ -266,16 +289,13 @@ BuildScreen {
     height: 1fr;
 }
 
-#build-log {
-    height: 1fr;
-    border: none;
-    background: $background;
-    scrollbar-size-vertical: 1;
-}
-
 #build-progress {
     height: 1;
     margin-bottom: 1;
+}
+
+#build-progress Bar {
+    width: 1fr;
 }
 
 #build-progress Bar > .bar--bar {
@@ -284,6 +304,18 @@ BuildScreen {
 
 #build-progress Bar > .bar--complete {
     color: $success;
+}
+
+#current {
+    height: 1;
+    color: $text-muted;
+}
+
+#build-log {
+    height: 1fr;
+    border: none;
+    background: $background;
+    scrollbar-size-vertical: 1;
 }
 
 #outcome {
@@ -338,55 +370,6 @@ BuildScreen {
 #done:hover,
 #done:focus {
     background: $panel-lighten-2;
-}
-
-/* ---------- toggles: glyph carries the state, colour reinforces it ---------- */
-
-Checkbox > .toggle--button,
-RadioButton > .toggle--button {
-    color: $text-muted;
-    background: transparent;
-}
-
-Checkbox.-on > .toggle--button,
-RadioButton.-on > .toggle--button {
-    color: $primary;
-    background: transparent;
-}
-
-.choices.narrow {
-    grid-size: 1;
-}
-
-#left {
-    width: 5fr;
-    height: 100%;
-}
-
-#left #create {
-    dock: bottom;
-    margin: 1 3 0 0;
-}
-
-#build-progress Bar {
-    width: 1fr;
-}
-
-#current {
-    height: 1;
-    color: $text-muted;
-}
-
-/* Single-line rows everywhere the content is a list, not prose. */
-
-#tree,
-#plan,
-#counts,
-.field-head,
-.field-head-tight,
-#resolved {
-    text-wrap: nowrap;
-    text-overflow: ellipsis;
 }
 
 /* ---------- welcome ---------- */

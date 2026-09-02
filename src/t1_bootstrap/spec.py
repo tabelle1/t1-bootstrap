@@ -4,10 +4,25 @@ import keyword
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from t1_bootstrap.options import DIRECTORIES, DIRECTORIES_BY_KEY, EXTRAS_BY_KEY
 
 _SEPARATORS = re.compile(r"[^a-z0-9]+")
+_SERIES = re.compile(r"\d\.\d{1,2}")
+"""A Python version series such as 3.13 - what .python-version and requires-python take."""
+
+# Windows refuses these as file names, and a repo made on a Mac gets cloned there.
+_RESERVED_NAMES = frozenset(
+    {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{n}" for n in range(1, 10)),
+        *(f"lpt{n}" for n in range(1, 10)),
+    }
+)
 
 
 def slugify(name: str) -> str:
@@ -28,8 +43,7 @@ class ProjectSpec:
     name: str = ""
     parent: Path = field(default_factory=Path.cwd)
     python: str = "3.13"
-    layout: str = "src"
-    """"src" or "flat"."""
+    layout: Literal["src", "flat"] = "src"
     directories: set[str] = field(default_factory=set)
     extras: set[str] = field(default_factory=set)
 
@@ -67,6 +81,10 @@ class ProjectSpec:
             return issues
         if not self.module.isidentifier() or keyword.iskeyword(self.module):
             issues.append(f"'{self.module}' is not a usable Python package name.")
+        if self.slug in _RESERVED_NAMES:
+            issues.append(f"'{self.slug}' is a reserved device name on Windows.")
+        if not _SERIES.fullmatch(self.python):
+            issues.append(f"'{self.python}' is not a Python version series like 3.13.")
 
         parent = self.parent.expanduser()
         if not parent.is_dir():
