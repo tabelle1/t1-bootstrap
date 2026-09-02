@@ -48,7 +48,7 @@ def test_generated_project_pins_the_chosen_python(spec):
 def test_generated_package_imports(spec):
     run(spec)
     result = subprocess.run(
-        ["python", "-c", "import demo_project; print(demo_project.__version__)"],
+        [sys.executable, "-c", "import demo_project; print(demo_project.__version__)"],
         cwd=spec.root / "src",
         capture_output=True,
         text=True,
