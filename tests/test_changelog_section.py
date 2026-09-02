@@ -83,5 +83,7 @@ def test_a_missing_version_fails_loudly(changelog):
 
 def test_an_empty_section_counts_as_missing(tmp_path):
     path = tmp_path / "CHANGELOG.md"
-    path.write_text("# Changelog\n\n## [1.0.0] - 2026-01-01\n\n## [0.9.0] - 2025-12-01\n\n- Real.\n")
+    path.write_text(
+        "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n## [0.9.0] - 2025-12-01\n\n- Real.\n"
+    )
     assert run(path, "1.0.0").returncode == 1
