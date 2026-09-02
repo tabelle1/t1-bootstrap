@@ -101,7 +101,7 @@ Run these in order. Stop at the first failure and report it — do not work arou
 **1. Preflight**
 
 ```bash
-command -v gh                      # needed for steps 8-9
+command -v gh                      # needed for step 8
 git status --short                 # must be clean
 git branch --show-current          # must be main
 git fetch --tags origin && git log --oneline origin/main..HEAD   # must be empty
@@ -124,7 +124,14 @@ code — re-sync before going further.
 
 **4. Close the changelog section.** Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
 (real date, ISO format — check `date +%F`, never guess), open a fresh empty `## [Unreleased]`
-above it, and update the link block at the bottom.
+above it, and update the link block at the bottom. Then prove it parses:
+
+```bash
+python3 scripts/changelog_section.py <NEW>
+```
+
+If that exits non-zero the release workflow will stop at the same check, before PyPI takes the
+version. Fix the changelog, not the check.
 
 **5. Commit and tag.** The tag message is the changelog section body, so `git show v0.2.0`
 explains itself with no network:
@@ -132,8 +139,11 @@ explains itself with no network:
 ```bash
 git add pyproject.toml CHANGELOG.md uv.lock
 git commit -m "chore(release): v<NEW>"
-git tag -a v<NEW> -F <(changelog section body)
+git tag -a v<NEW> -F <(python3 scripts/changelog_section.py <NEW>)
 ```
+
+The tag message, the GitHub release body and the changelog all come from that one command, so
+they cannot disagree.
 
 **6. Verify the artifact before it is irreversible.** PyPI versions can never be reused.
 
@@ -148,19 +158,21 @@ git push origin main
 git push origin v<NEW>             # this is the point of no return — confirm with the user first
 ```
 
-**8. Document the release on GitHub.** The workflow publishes to PyPI but does *not* create a
-GitHub release. That is your step, and it is not optional:
+**8. Watch it land.** The workflow now creates the GitHub release itself, from the same
+changelog section, with the wheel and sdist attached. You verify rather than create:
 
 ```bash
-gh release create v<NEW> --title "v<NEW>" --notes-file <(changelog section body) --verify-tag
+gh run watch                                    # all four jobs green
+gh release view v<NEW>                          # notes present, artifacts attached
+uv pip index versions t1-bootstrap              # new version visible on PyPI
 ```
 
-**9. Confirm it landed**
+If the `release` job fails after `publish` succeeded, PyPI has the version but GitHub has no
+release. Do not retag — create it by hand and say so:
 
 ```bash
-gh run watch                                    # publish workflow green
-gh release view v<NEW>
-uv pip index versions t1-bootstrap              # new version visible on PyPI
+gh release create v<NEW> --title "v<NEW>" \
+  --notes-file <(python3 scripts/changelog_section.py <NEW>) --verify-tag dist/*
 ```
 
 Report back: version, tag, GitHub release URL, PyPI status, and the changelog section verbatim.
