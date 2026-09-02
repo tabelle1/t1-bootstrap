@@ -8,6 +8,10 @@ is `0`, breaking changes are released as minor bumps and are always called out b
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-02
+
+First public release. Requires Python 3.13 or newer.
+
 ### Added
 
 - Interactive TUI for scaffolding a Python project: a start screen, then a single form with a
@@ -28,14 +32,7 @@ is `0`, breaking changes are released as minor bumps and are always called out b
 - Graceful degradation without uv: projects still build via `python -m venv`, and t1 offers to
   install uv only when someone is there to answer.
 
-### Changed
+<!-- Update on every release: [Unreleased] compares the newest tag to main. -->
 
-- Requires Python 3.13 or newer.
-- `__version__` is read from installed package metadata, so the version is declared only in
-  `pyproject.toml`.
-
-<!-- Link block: update on every release.
-     [Unreleased] compares the last tag to main; each version compares to the one before it.
 [Unreleased]: https://github.com/tabelle1/t1-bootstrap/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tabelle1/t1-bootstrap/releases/tag/v0.1.0
--->
