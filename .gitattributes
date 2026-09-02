@@ -1,0 +1,3 @@
+# One line ending everywhere. A Windows checkout must not turn the stylesheet,
+# the templates or the shell wrappers into CRLF.
+* text=auto eol=lf

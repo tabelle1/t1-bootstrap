@@ -27,15 +27,21 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # The package ships py.typed, so the annotations are a promise. Check it.
+      - run: uv run ty check src
+      # A wheel that does not build, or a README PyPI cannot render, should fail
+      # the pull request - not the release run.
+      - run: uv build
+      - run: uvx twine check --strict dist/*
 
   test:
     # ruff is pinned and target-version is fixed, so linting once above is
-    # enough; this matrix is about the interpreters and the two OSes we claim.
+    # enough; this matrix is about the interpreters and the three OSes we claim.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
@@ -43,4 +49,17 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --python ${{ matrix.python-version }}
-      - run: uv run --python ${{ matrix.python-version }} pytest -q
+      - run: uv run --python ${{ matrix.python-version }} pytest -q --cov=t1_bootstrap --cov-report=term-missing
+
+  # The declared dependency floors (textual>=6.0, rich>=13.3.3) are tested, not
+  # just declared: resolve every direct dependency to its lowest allowed version.
+  floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - run: uv lock --resolution lowest-direct
+      - run: uv sync --python 3.13
+      - run: uv run --python 3.13 pytest -q

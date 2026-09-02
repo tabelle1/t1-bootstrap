@@ -6,7 +6,12 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 .DS_Store
+
+# local tooling - the release agent lives here and is machine-specific
+.claude/
 
 # secrets - never in the repo
 .env

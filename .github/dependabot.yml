@@ -1,0 +1,12 @@
+# Weekly bumps for the workflow actions and the uv lockfile. Tag-pinned actions
+# and a locked dev environment only stay current if something keeps moving them.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
